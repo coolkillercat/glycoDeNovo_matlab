@@ -1,9 +1,9 @@
 classdef trainMethods < handle
-    properties
-        methodList = ['cTree', 'randomForest', 'AdaBoostM1'];
+    properties(Constant)
+        methodList = ["cTree", "randomForest", "AdaBoostM1","SVM","KNN"];
     end
     
-    methods
+    methods(Static)
     
         function c = train_by_method(X, Y, method, hyperparameters)
             c.classifier = [];
@@ -25,13 +25,17 @@ classdef trainMethods < handle
                     c.FeatureImportance = c.classifier.predictorImportance;
                 case 'randomForest'
                     c.classifier = TreeBagger(mBoostNum, X, Y);
-                    c.FeatureImportance = c.classifier.predictorImportance;
+                    %c.FeatureImportance = c.classifier.predictorImportance;
                 case 'AdaBoostM1'
                     c.classifier = fitensemble(X, Y, 'AdaBoostM1', mBoostNum, 'tree', ...
                         'Weights', weights,'type', 'classification');
                     c.FeatureImportance = c.classifier.Trained{1}.predictorImportance;
+                case 'SVM'
+                    c.classifier = fitcsvm(X, Y);
+                case 'KNN'
+                    c.classifier = ClassificationKNN.fit(X, Y,'NumNeighbors',1);
                 otherwise
-                    warning('train_by_method error: no such method')
+                    warning(['train_by_method error: no such method', method])
                     return;
             end
         end

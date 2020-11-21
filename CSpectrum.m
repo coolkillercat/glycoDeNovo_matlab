@@ -790,6 +790,7 @@ classdef CSpectrum < handle % By Pengyu Hong @ Brandeis University
                 currPeak = CPeak();
                 currPeak.mSpectrum = result;
                 currPeak.mRawMZ = str2double(datas{1});
+                currPeak.mMass = currPeak.mRawMZ;
                 currPeak.mRawZ = str2double(datas{2});
                 currPeak.mZscore = str2double(datas{3});
                 if result.mProtonated

@@ -72,10 +72,7 @@ classdef linkageClassifier
             end
         end
         
-        function linkageScoreMap = rank_candidates(obj, specSet)
-            [dataVectors, dataSources] = obj.extract_data(specSet);
-            linkageScoreMap = obj.predict_linkages(dataVectors, dataSources);
-        end
+        function rank_
         
         function [massFeatures, obj] = calculate_mass_feature(obj, specSet, masses, massBound, massAccuracy)
             if nargin < 3 || isempty(massBound), massBound = [CMass.H*1.5, 30]; end
@@ -114,11 +111,11 @@ classdef linkageClassifier
         function [dataVectors, dataSources] = extract_data(obj, specSet, massBound, massAccuracy)
             if nargin < 3 || isempty(massBound), massBound = [CMass.H*1.5, 30]; end
             if nargin < 4 || isempty(massAccuracy), massAccuracy = 0.005; end
-            peakAvailable = cell(length(specSet), 1);
+            peakAvailable = cells(length(specSet), 1);
             for s = 1: length(specSet)
                 spectra = specSet{s};
                 if ~spectra.mProtonated
-                    spectra.protonate(spectra.mPrecursor);
+                    spectra.protonate(spectra.precursor);
                     spectra.add_complementary_ions();
                     spectra.merge_peaks( 0.02 );
                     reconstructor = CGlycoDeNovo( 20, []); % 5ppm accuracy

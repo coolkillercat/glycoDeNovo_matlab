@@ -7,6 +7,7 @@ mBoostNum = 15;
 mHoldOut = 0.2;
 savePath = 'E:\Brandeis\data\annotation\2020.11.7_large.txt';
 saveMapPath = 'E:\Brandeis\data\annotation\2020.11.7_large_map.txt';
+saveTrainResultPath = 'E:\Brandeis\data\annotation\train_result.txt';
 %% This dataset use SNAP peak picking
 
 clear filename;
@@ -57,14 +58,15 @@ for s = 1 : length(specSet)
     end
 end
 %% merge mass
-h=waitbar(0,'merge masses progress');
+lc = linkageClassifier;
+hp=waitbar(0,'merge masses progress');
 for s = 1 : length(specSet)
     spec = specSet{s};
     masses = linkageClassifier.calculate_masses(spec, masses, massBound);
-    waitbar(s/length(specSet), h, ['Calculating context spec ' num2str(s) ' ' num2str(100*s/length(specSet)) '%'])
+    waitbar(s/length(specSet), hp, ['Calculating context spec ' num2str(s) ' ' num2str(100*s/length(specSet)) '%'])
 end
-delete(h);
-massFeature = linkageClassifier.calculate_mass_feature(specSet, masses, massBound, massAccuracy);
+delete(hp);
+massFeature = lc.calculate_mass_feature(specSet, masses, massBound, massAccuracy);
 %% output
 %save(specSet)?
 fid = fopen(savePath, 'w');
@@ -98,8 +100,11 @@ fclose(fid2);
 
 %% test linkage classifier
 vs = nchoosek(keys(dataVectors),2);
+fid3 = fopen(saveTrainResultPath, 'w');
+fprintf(fid3, '%13s\t%13s\t%13s\t%13s\t%13s\n',"CLASSIFIER","POS","NEG","TRAINERR","TESTERR");
 classifierMap = containers.Map;
-for v = 1 : length(vs)
+for m = trainMethods.methodList
+    for v = 1 : length(vs)
     pos = vs{v,1};
     neg = vs{v,2};
     posX = dataVectors(pos);
@@ -118,33 +123,24 @@ for v = 1 : length(vs)
     testY = [ones(size(posTestX,1),1); zeros(size(negTestX,1),1)];
     XInfo = [posSource, negSource];
     weights = [ones(size(posX,1),1)/size(posX,1); ones(size(negX,1),1)/size(negX,1)] / 2;
-    if (use_simple_method)
-        currclassifier.classifier = fitctree(X, Y);
-        currclassifier.FeatureImportance = currclassifier.classifier.predictorImportance;
-    else
-         currclassifier.classifier = fitensemble(X, Y, 'AdaBoostM1', mBoostNum, 'tree', ...
-         'Weights', weights,'type', 'classification');    %'Holdout', mHoldOut, 'Weights', weights, 'type', 'classification');
-%         if isempty( currclassifier.classifier.Trained{1}.predictorImportance )
-%             currclassifier.classifier = fitensemble(X, Y, 'Bag', obj.mBoostNum, 'Tree', ...
-%             'Holdout', obj.mHoldOut, 'Weights', weights, 'Type', 'classification');
-%         end
-         currclassifier.FeatureImportance = currclassifier.classifier.Trained{1}.predictorImportance;
-%        currclassifier.classifier = TreeBagger(mBoostNum, X, Y);
-        %currclassifier.FeatureImportance = currclassifier.classifier.predictorImportance;
-    end
-    classifierMap([pos, neg]) = currclassifier;
-    if use_simple_method
+    hp = cell(2,1);
+    hp{1} = mBoostNum;
+    hp{2} = weights;
+
+        currclassifier = trainMethods.train_by_method(X, Y, m, hp);
+        classifierMap(strcat([pos, neg],m)) = currclassifier;
         trainLabel = predict(currclassifier.classifier, X);
         testLabel = predict(currclassifier.classifier, testX);
-    else 
-%         trainLabel = currclassifier.classifier.Trained{1}.predict(currclassifier.classifier, X);
-%         testLabel = currclassifier.classifier.Trained{1}.predict(currclassifier.classifier, testX);
-        [trainLabel, pTrain] = predict(currclassifier.classifier, X);
-%        trainLabel = str2double(trainLabel);
-        [testLabel, pTest] = predict(currclassifier.classifier, testX);
-%        testLabel = str2double(testLabel);
+        if strcmp(m, 'randomForest') == 1
+            trainLabel = str2double(trainLabel);
+            testLabel = str2double(testLabel);
+        end
+        trainError = sum(abs(trainLabel - Y)) / length(Y);
+        testError = sum(abs(testLabel - testY)) / length(testY);
+        fprintf(fid3, '%13s\t%13s\t%13s\t%13f\t%13f\n', m, pos, neg, trainError, testError);
     end
-    trainError = sum(abs(trainLabel - Y)) / length(Y);
-    testError = sum(abs(testLabel - testY)) / length(testY);
-    disp(['classifier: ', pos,'-',neg , ' TrainError: ', num2str(trainError), ' TestError: ', num2str(testError)]);
 end
+fclose(fid3);
+disp('Done!')
+%%
+save lc;
