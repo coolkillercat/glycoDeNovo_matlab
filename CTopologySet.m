@@ -18,6 +18,8 @@ classdef CTopologySet < handle  % By Pengyu Hong @ Brandeis University
         mReconstructed = 0;  % 1 if it has been reconstructed from mono and sources
         
         mReconstructor = CGlycoDeNovo.empty(1,0);
+        
+        mLinkageScore;
     end
     
     properties (SetAccess = private)
@@ -215,6 +217,7 @@ classdef CTopologySet < handle  % By Pengyu Hong @ Brandeis University
                     newTP.mMass = mass;
                     newTP.mType = obj.mType;
                     newTP.mCompositionCount = compositionCountMerged;
+                    newTP.mBranchTopologies = obj.mBranchTopologies;
                     
                     obj.mCandidateNum = obj.mCandidateNum + 1;
                     obj.mTopologies(obj.mCandidateNum) = newTP;

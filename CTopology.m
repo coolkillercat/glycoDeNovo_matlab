@@ -3,12 +3,15 @@ classdef CTopology < handle % By Pengyu Hong @ Brandeis University
         mType = '';
         mMass = 0;
         mMinusH = 0;
-
+        
         mFormula = '';
         mSupportPeaks = [];
         mScore = 0;
         mCompositionCount = zeros(1, CMonosaccharideSet.cNumberMonosaccharideClasses );
         mRootMonoClassID = 0;
+        
+        mLinkageScore;
+        mBranchTopologies = {[], [], [], []};
     end
     
     methods

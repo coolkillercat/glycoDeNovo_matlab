@@ -5,8 +5,9 @@ classdef linkageClassifier
         mMassAccuracy = 0.005;
         mClassifier = [];
         mBoostNum = 20;
-        mClassifierMap = containers.Map;
+        mClassifierMap; %one Map for one ion
         mMethods = ["SVM"];
+        linkageList = ["HexHex", "HexNAcHex", "HexHexNAc"];
     end
     
     methods
@@ -17,7 +18,8 @@ classdef linkageClassifier
             classifier = trainMethods.train_by_method(X, Y, method, hp);
         end
         
-        function [trainError, XInfo, obj] = train_by_ion(obj, dataVectors, dataSources)
+        function obj = train_by_ion(obj, dataVectors, dataSources)
+            obj.mClassifierMap = containers.Map;
             vs = nchoosek(keys(dataVectors),2);
             for m = obj.mMethods %Edit method here
                 for v = 1 : length(vs)
@@ -35,49 +37,111 @@ classdef linkageClassifier
                     hp{1} = obj.mBoostNum;
                     hp{2} = weights;
                     currclassifier = obj.train(X, Y, m, hp);
-                    obj.mClassifierMap(strcat([pos, neg],m)) = currclassifier;
                     trainLabel = predict(currclassifier.classifier, X);
                     if strcmp(m, 'randomForest') == 1
                          trainLabel = str2double(trainLabel);
                     end
                     trainError = sum(abs(trainLabel - Y)) / length(Y);
+                    currclassifier.trainError = trainError;
+                    currclassifier.XInfo = XInfo;
+                    obj.mClassifierMap([pos, neg]) = currclassifier;
                 end
             end
         end
         
+        %dataVectors should have 1 ion
         function linkageScoreMap = predict_linkages(obj, dataVectors, dataSources, linkageList)
-            if nargin < 3, linkageList = ["HexHex", "HexNAcHex", "HexHexNAc"]; end
-            linkageScoreMap.B = containers.Map;
-            linkageScoreMap.C = containers.Map;
-            for iontype = 'BC'
-                for linkage = linkageList
-                    ws = containers.Map;
-                    for vsLinkage = setdiff(linkageList, linkage)
-                        key = strcat(linkage, vslinkage);
-                        if isKey(obj.mClassifierMap, key)
-                            [~, b] = obj.mClassifierMap(key).classifier.predict( dataVectors.(iontype)(k,:) );
-                            ws(key) = b(2);
+            if nargin < 4, linkageList = obj.linkageList; end
+            linkageScoreMap = containers.Map;
+            %========================================
+            avlClassifiers = zeros(length(linkageList), length(linkageList));
+            for linkage = 1:length(linkageList)
+                for vsLinkage = 1:length(linkageList)
+                    key = strcat(linkageList(linkage), linkageList(vsLinkage));
+                    if isKey(obj.mClassifierMap, key)
+                        linkageScoreMap(linkageList(linkage)) = containers.Map('KeyType', 'uint32', 'ValueType', 'double');
+                        linkageScoreMap(linkageList(vsLinkage)) = containers.Map('KeyType', 'uint32', 'ValueType', 'double');
+                        avlClassifiers(linkage, vsLinkage) = 1;
+                        avlClassifiers(vsLinkage, linkage) = -1;
+                    end
+                end
+            end
+            %==========================================
+            for k = 1 : size(dataVectors,1)
+                key = dataSources(k).spectrumID * 10000 + dataSources(k).peakID;
+                for linkage = 1 : length(linkageList)
+                    if ~isKey(linkageScoreMap, linkageList(linkage))
+                        continue;
+                    end
+                    vsLinkages = find(avlClassifiers(linkage,:)~=0);
+                    ws = zeros(1, length(vsLinkages));
+                    i = 0;
+                    for vsLinkage = vsLinkages
+                        i = i + 1;
+                        if avlClassifiers(linkage, vsLinkage) == 1
+                            currClassifier = obj.mClassifierMap(strcat(linkageList(linkage), linkageList(vsLinkage)));
+                            [tttt, b] = currClassifier.classifier.predict( dataVectors(k,:) );
+                            ws(i) = b(2);
                         else
-                            key = strcat(vslinkage, linkage);
-                            if isKey(obj.mClassifierMap, key)
-                                [~, b] = obj.mClassifierMap(key).classifier.predict( dataVectors.(iontype)(k,:) );
-                                ws(key) = b(2);
-                            else
-                                continue;
-                            end
+                            currClassifier = obj.mClassifierMap(strcat(linkageList(vsLinkage), linkageList(linkage)));
+                            [tttt, b] = currClassifier.classifier.predict( dataVectors(k,:) );
+                            ws(i) = b(1);
                         end
                     end
-                    linkageScoreMap.(iontype)(linkage) = min(ws);
+                    map = linkageScoreMap(linkageList(linkage));
+                    map(key) = min(ws);%?Dont know if it works
                 end
             end
         end
         
         function linkageScoreMap = rank_candidates(obj, specSet)
             [dataVectors, dataSources] = obj.extract_data(specSet);
-            linkageScoreMap = obj.predict_linkages(dataVectors, dataSources);
+            linkageScoreMap = obj.predict_linkages(dataVectors.B, dataSources.B);%TODO
         end
         
-        function [massFeatures, obj] = calculate_mass_feature(obj, specSet, masses, massBound, massAccuracy)
+        function  [accurateNum, accuracy, wrongList, wrongData] = testScoreMap(obj, linkageScoreMap, specSetTrain, specSetTest)
+            linkages = keys(linkageScoreMap);
+            peakIDs = keys(linkageScoreMap(linkages{1}));
+            accurateNum = 0;
+            wrongList = [];
+            wrongData = [];
+            for p = 1 : length(peakIDs)
+                peakID = peakIDs{p};
+                specTrain = specSetTrain{floor(peakID/10000)};
+                specTest = specSetTest{floor(peakID/10000)};
+                peakTrain = specTrain.mPeaks(mod(peakID, 10000));
+                [~, minIdx] = min(abs([specTest.mPeaks.mRawMZ] - peakTrain.mMass));
+                peakTest = specTest.mPeaks(minIdx);
+                maxScore = 0;
+                maxLinkage = [];
+                scores = [];
+                for l = 1:length(linkages)
+                    linkage = linkages{l};
+                    lmap = linkageScoreMap(linkage);
+                    score = lmap(peakID);
+                    scores = [scores, score];
+                    if score > maxScore
+                        maxScore = score;
+                        maxLinkage = linkage;
+                    end
+                end
+                [RE, NRE] = linkageClassifier.split_linkage(maxLinkage);
+                peakTrain.RE = RE;
+                peakTrain.NRE = NRE;
+                if strcmp(maxLinkage, [peakTest.RE, peakTest.NRE]) == 1
+                    accurateNum = accurateNum + 1;
+                else
+                    if strcmp(peakTest.RE, '') == 0 || 1
+                        wrongList = [wrongList, peakTrain];
+                        wrongData = [wrongData; [double(peakID), scores]];
+                    end
+                end
+            end
+            wrongData = [["peakIDs", linkages]; wrongData];
+            accuracy = accurateNum / length(peakIDs);
+        end
+        
+        function massFeatures = calculate_mass_feature(obj, specSet, masses, massBound, massAccuracy)
             if nargin < 3 || isempty(massBound), massBound = [CMass.H*1.5, 30]; end
             if nargin < 4 || isempty(massAccuracy), massAccuracy = 0.005; end
             h1 = waitbar(0, 'spectrum');
@@ -106,7 +170,6 @@ classdef linkageClassifier
                     end
                 end
             end
-            obj.mMassFeatures = massFeatures;
             delete(h1);
             delete(h2);
         end
@@ -117,21 +180,32 @@ classdef linkageClassifier
             peakAvailable = cell(length(specSet), 1);
             for s = 1: length(specSet)
                 spectra = specSet{s};
-                if ~spectra.mProtonated
-                    spectra.protonate(spectra.mPrecursor);
-                    spectra.add_complementary_ions();
-                    spectra.merge_peaks( 0.02 );
-                    reconstructor = CGlycoDeNovo( 20, []); % 5ppm accuracy
-                    reconstructor.mCheckMinusH = 0;
-                    reconstructor.interpret_peaks( spectra );
-                    reconstructor.reconstruct_formulas();
-                end
+%                 if ~spectra.mProtonated %test: always protonate
+%                     spectra.protonate();
+%                     spectra.add_complementary_ions();
+%                     spectra.merge_peaks( 0.0025 );
+% %                     m2c = CMass2Composition;
+% %                     m2c.load( 'm2c.mat' );
+% %                     m2c.mCheckMinus2H = 1;
+% %                     if spectra.mMassAccuracy > 0
+% %                         m2c.mMassAccuracyPPM = spectra.mMassAccuracy;
+% %                     else
+% %                         m2c.mMassAccuracyPPM = 5;
+% %                     end
+% %                     m2c.set_reducing_end_modification( spectra.mReducingEndModification );
+% %                     m2c.set_permethylation( spectra.mPermethylated );
+% %                     hypoSpecs = m2c.correct_spectrum( spectra );
+%                     reconstructor = CGlycoDeNovo( 5, []); % 5ppm accuracy
+%                     reconstructor.mCheckMinusH = 0;
+%                     reconstructor.interpret_peaks( spectra );
+%                     reconstructor.reconstruct_formulas();
+%                 end
                 context = {};
                 peakMasses = [spectra.mPeaks.mMass];
                 neighbour = cell(length(peakMasses), 1);
-                peakAvailable{s} = ones(1, length(peakMasses));
+                peakAvailable{s} = ones(1, length(peakMasses)); %should be zeros
                 for p = 1 : length(spectra.mPeaks)-1
-                    if ~isempty(spectra.mPeaks(p).mInferredFormulas)
+                    if ~isempty(spectra.mPeaks(p).mInferredFormulas)  %?:no peaks available
                         peakAvailable{s}(p) = 1;
                     end
                 end
@@ -174,6 +248,8 @@ classdef linkageClassifier
                     end
                 end
             end
+            delete(h1);
+            delete(h2);
             dataVectors.B = [];
             dataVectors.C = [];
             dataSources.B = [];
@@ -200,9 +276,11 @@ classdef linkageClassifier
                             case {2, 21, 22}
                                 iontype = 'C';
                         end
-                        dataSignals.(iontype)(end+1).peak = peak;
-                        dataSignals.(iontype)(end).context = peak.mNeighbour;
-                        dataVectors.(iontype)(end+1) = peak.mLinkageVector;
+                        dataSources.(iontype)(end+1).peak = peak;
+                        dataSources.(iontype)(end).context = peak.mNeighbour;
+                        dataSources.(iontype)(end).peakID = p;
+                        dataSources.(iontype)(end).spectrumID = s;
+                        dataVectors.(iontype) = [dataVectors.(iontype);peak.mLinkageVector];
                     end
                 end
             end
@@ -300,16 +378,77 @@ classdef linkageClassifier
             masses = unique(masses);
         end
         
+        function getLinkageScore(spec, LSM)
+            if isempty(LSM.B), LSM.B = containers.Map(); end
+            if isempty(LSM.C), LSM.C = containers.Map(); end
+            for p = 1:length(spec.mPeaks)
+                peak = spec.mPeaks(p);
+                if isempty(peak.mInferredSuperSet), continue; end
+                if linkageClassifier.isMono(peak)
+                    peak.mInferredSuperSet.mTopologies.mLinkageScore = 0;
+                    peak.mInferredSuperSet.mLinkageScore = 0;
+                    peak.mInferredSuperSet.mTopologySets.mLinkageScore = 0;
+                end
+                for TSS = peak.mInferredSuperSet
+                    for TS = TSS.mTopologySets
+                        RE = TS.mRootMono.mClass;
+                        for STSS = TS.Sources
+                            cache = [];
+                            if isempty(STSS), continue; end
+                            for STS = STSS.mTopologySets
+                                NRE = STS.mRootMono.mClass;
+                                SPeak = STS.mTopologies(1).mSupportPeaks(end);
+                                iontype = STS.mType;
+                                imap = LSM.(iontype);
+                                linkage = [RE, NRE];
+                                lmap = imap(linkage);
+                                addScore = lmap(SPeak);
+                                cache = [cache, addScore + STS.mLinkageScore];
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
         function linkageList = mono2linkage(monoList)
             vs = nchoosek(monoList,2);
             linkageList = [];
-            for v = size(vs,1)
+            for v = 1:size(vs,1)
                 linkageList = [linkageList, strcat(vs(v,1),vs(v,2)) , strcat(vs(v,2), vs(v,1))];
             end
             for v = 1:length(monoList)
                 linkageList = [linkageList, strcat(monoList(v), monoList(v))];
             end
         end
+        
+        function [RE, NRE] = split_linkage(linkage)
+            ch = linkage(1);
+            RL = 3;
+            if strcmp(ch, 'H') == 1
+                if strcmp(ch, 'HexNAc') == 1
+                    RL = 6;
+                elseif strcmp(ch, 'HexA') == 1
+                        RL = 4;
+                end
+            elseif strcmp(ch, 'N') == 1
+                RL = 6;
+            end
+            RE = linkage(1:RL);
+            NRE = linkage((RL+1):end);
+        end
+        
+        function label = isMono(peak)
+            if isempty(peak.mInferredSuperSet), label = 0; return; end
+            label = 1;
+            for TSS = peak.mInferredSuperSet
+                if length(TSS.mTopologies) == 1 && sum(TSS.mTopologies.mCompositionCount) == 1
+                else 
+                    label = 0;
+                end
+            end
+        end
+        
     end
     
 end

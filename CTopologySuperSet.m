@@ -9,6 +9,7 @@ classdef CTopologySuperSet < handle  % By Pengyu Hong @ Brandeis University
         mFormulas = {};
         mTopologies = CTopology.empty(0,0);
         mTopologySets = CTopologySet.empty(0,0);
+        mLinkageScore;
         mReconstructed = 0;  % 1 if it has been reconstructed from mono and sources
 
         mReconstructor = CGlycoDeNovo.empty(1,0);

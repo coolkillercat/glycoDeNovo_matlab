@@ -32,6 +32,7 @@ classdef trainMethods < handle
                     c.FeatureImportance = c.classifier.Trained{1}.predictorImportance;
                 case 'SVM'
                     c.classifier = fitcsvm(X, Y);
+                    c.classifier = fitPosterior(c.classifier);
                 case 'KNN'
                     c.classifier = ClassificationKNN.fit(X, Y,'NumNeighbors',1);
                 otherwise

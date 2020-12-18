@@ -1,7 +1,7 @@
 % This dataset use SNAP peak picking
 
 clear filename;
-dataset = '20200618';
+dataset = '20170615.2';
 if ismac
     datapath = [getenv('HOME'), '/Documents/Projects/Glycomics/data/', dataset, filesep];
 else

@@ -4,7 +4,7 @@ dataset = '20200612';
 if ismac
     datapath = [getenv('HOME'), '/Documents/Projects/Glycomics/data/', dataset, filesep];
 else
-    datapath = ['D:\Projects\Glycomics\data\', dataset, filesep];
+    datapath = ['E:\Brandeis\data\', dataset, filesep];
 end
 files = dir( [datapath, '*.txt'] );
 
